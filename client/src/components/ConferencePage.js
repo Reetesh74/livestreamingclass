@@ -14,10 +14,10 @@ const ConferencePage = ({ roomId }) => {
   useEffect(() => {
     const newSocket = io(SERVER_URL);
     setSocket(newSocket);
-
+    console.log("Client rooms: ", newSocket.rooms);
     newSocket.on("connect", () => {
       console.log("Connected to server:", newSocket.id);
-       
+
       newSocket.emit("joinRoom", roomId, (response) => {
         if (response.error) {
           console.error("Error joining room:", response.error);
@@ -30,13 +30,13 @@ const ConferencePage = ({ roomId }) => {
         setRouterRtpCapabilities(response.routerRtpCapabilities);
       });
     });
-    
-    debugger
-    newSocket.on("updateUserList", (updatedUserList) => {
-        debugger
-      console.log("Updated User List:", updatedUserList);
-      setUserList(updatedUserList);
+
+    newSocket.on("updateUserList", (newUserList) => {
+      debugger;
+      console.log("Received Updated User List:", newUserList);
+      setUserList(newUserList);
     });
+
     return () => newSocket.close();
   }, [roomId]);
 

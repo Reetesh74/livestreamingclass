@@ -32,10 +32,10 @@ app.post("/createMeeting", (req, res) => {
 });
 
 const mediasoupWorkers = [];
-let router; // Router will only be initialized after Mediasoup worker is ready
+let router;
 
-const peers = {}; // Track peers per room
-const users = {}; // Track users globally
+const peers = {};
+const users = {};
 
 (async () => {
   try {
@@ -79,9 +79,10 @@ io.on("connection", (socket) => {
 
     if (!peers[roomId]) peers[roomId] = [];
     peers[roomId].push(socket.id);
-    
+
+    socket.join(roomId);
     const userList = peers[roomId].map((id) => ({ id }));
-    console.log(userList)
+    console.log("user updated list " + JSON.stringify(userList));
     io.to(roomId).emit("updateUserList", userList);
 
     // Check if router is ready before sending the capabilities
@@ -122,6 +123,8 @@ io.on("connection", (socket) => {
     }
   });
 
+  
+
   socket.on("disconnect", () => {
     console.log(`Client disconnected: ${socket.id}`);
 
@@ -129,7 +132,7 @@ io.on("connection", (socket) => {
     if (roomId && peers[roomId]) {
       peers[roomId] = peers[roomId].filter((id) => id !== socket.id);
       const userList = peers[roomId].map((id) => ({ id }));
-     
+
       io.to(roomId).emit("updateUserList", userList);
 
       if (peers[roomId].length === 0) {
