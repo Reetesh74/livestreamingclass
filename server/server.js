@@ -27,7 +27,7 @@ const io = socketIo(server, {
 app.post("/createMeeting", (req, res) => {
   const roomId = uuidv4(); // Generate a unique meeting ID
   peers[roomId] = []; // Initialize the room with no peers
-  console.log(`Meeting created with ID: ${roomId}`);
+  // console.log(`Meeting created with ID: ${roomId}`);
   res.json({ roomId }); // Send the meeting ID to the client
 });
 
@@ -73,7 +73,7 @@ io.on("connection", (socket) => {
   users[socket.id] = { id: socket.id, roomId: null };
 
   socket.on("joinRoom", async (roomId, callback) => {
-    console.log(`${socket.id} is joining room: ${roomId}`);
+    // console.log(`${socket.id} is joining room: ${roomId}`);
 
     users[socket.id].roomId = roomId;
 
@@ -82,7 +82,7 @@ io.on("connection", (socket) => {
 
     socket.join(roomId);
     const userList = peers[roomId].map((id) => ({ id }));
-    console.log("user updated list " + JSON.stringify(userList));
+    // console.log("user updated list " + JSON.stringify(userList));
     io.to(roomId).emit("updateUserList", userList);
 
     // Check if router is ready before sending the capabilities
@@ -94,7 +94,7 @@ io.on("connection", (socket) => {
       callback({ error: "Router not ready" });
     }
   });
-
+  
   // Handle client request to create transport
   socket.on("createTransport", async (callback) => {
     try {
@@ -117,14 +117,58 @@ io.on("connection", (socket) => {
       });
 
       socket.transport = transport;
+      console.log("Current transport on server:", socket.transport);
+
     } catch (error) {
       console.error("Error creating transport:", error);
       callback({ error: "Transport creation failed" });
     }
   });
 
-  
+  socket.on("connectTransport", async ({ dtlsParameters }, callback, errback) => {
+    // console.log("Client requesting transport connection with dtlsParameters:", dtlsParameters);
 
+    try {
+      if (!socket.transport) {
+        console.error("No transport available for connection");
+        return errback("Transport not available");
+      }
+
+      // Connect the transport with the provided dtlsParameters
+      await socket.transport.connect({ dtlsParameters });
+      // console.log("Transport connected successfully");
+      callback();  // Call the callback to indicate success
+    } catch (error) {
+      console.error("Error connecting transport:", error);
+      errback(error);  // Call the errback in case of failure
+    }
+  });
+
+  socket.on("produce", async ({ kind, rtpParameters }, callback) => {
+    // console.log("Received 'produce' event with kind:", kind, "and rtpParameters:", rtpParameters);  // Log rtpParameters
+    try {
+      const producer = await socket.transport.produce({ kind, rtpParameters });
+      const roomId = users[socket.id].roomId;
+  
+      peers[roomId].producers = peers[roomId].producers || [];
+      peers[roomId].producers.push(producer);
+  
+      callback({ id: producer.id });
+      
+      // Notify other participants in the room about the new producer
+      socket.broadcast.to(roomId).emit("newProducer", {
+        producerId: producer.id,
+        userId: socket.id, // Include user ID
+      });
+  
+      // console.log("Created new producer with ID:", producer.id);  // Log producer creation
+    } catch (error) {
+      console.error("Error producing media:", error);
+      callback({ error: "Production failed" });
+    }
+  });
+  
+  
   socket.on("disconnect", () => {
     console.log(`Client disconnected: ${socket.id}`);
 
