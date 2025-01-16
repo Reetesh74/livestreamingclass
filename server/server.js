@@ -61,15 +61,13 @@ const users = {};
       ],
     });
 
-    console.log("Mediasoup worker and router created.");
+    // console.log("Mediasoup worker and router created.");
   } catch (error) {
     console.error("Error initializing Mediasoup worker/router:", error);
   }
 })();
 
 io.on("connection", (socket) => {
-  console.log(`New client connected: ${socket.id}`);
-
   users[socket.id] = { id: socket.id, roomId: null };
 
   socket.on("joinRoom", async (roomId, callback) => {
@@ -94,7 +92,7 @@ io.on("connection", (socket) => {
       callback({ error: "Router not ready" });
     }
   });
-  
+
   // Handle client request to create transport
   socket.on("createTransport", async (callback) => {
     try {
@@ -109,6 +107,8 @@ io.on("connection", (socket) => {
         preferUdp: true,
       });
 
+      socket.transport = transport;
+
       callback({
         id: transport.id,
         iceParameters: transport.iceParameters,
@@ -116,61 +116,110 @@ io.on("connection", (socket) => {
         dtlsParameters: transport.dtlsParameters,
       });
 
-      socket.transport = transport;
-      console.log("Current transport on server:", socket.transport);
-
     } catch (error) {
       console.error("Error creating transport:", error);
       callback({ error: "Transport creation failed" });
     }
   });
 
-  socket.on("connectTransport", async ({ dtlsParameters }, callback, errback) => {
-    // console.log("Client requesting transport connection with dtlsParameters:", dtlsParameters);
+  socket.on(
+    "connectTransport",
+    async ({ dtlsParameters }, callback, errback) => {
+      // console.log("Client requesting transport connection with dtlsParameters:", dtlsParameters);
 
-    try {
-      if (!socket.transport) {
-        console.error("No transport available for connection");
-        return errback("Transport not available");
+      try {
+        if (!socket.transport) {
+          console.error("No transport available for connection");
+          return errback("Transport not available");
+        }
+
+        // Connect the transport with the provided dtlsParameters
+        await socket.transport.connect({ dtlsParameters });
+        // console.log("Transport connected successfully");
+        callback(); // Call the callback to indicate success
+      } catch (error) {
+        console.error("Error connecting transport:", error);
+        errback(error); // Call the errback in case of failure
       }
-
-      // Connect the transport with the provided dtlsParameters
-      await socket.transport.connect({ dtlsParameters });
-      // console.log("Transport connected successfully");
-      callback();  // Call the callback to indicate success
-    } catch (error) {
-      console.error("Error connecting transport:", error);
-      errback(error);  // Call the errback in case of failure
     }
-  });
+  );
 
   socket.on("produce", async ({ kind, rtpParameters }, callback) => {
     // console.log("Received 'produce' event with kind:", kind, "and rtpParameters:", rtpParameters);  // Log rtpParameters
     try {
       const producer = await socket.transport.produce({ kind, rtpParameters });
       const roomId = users[socket.id].roomId;
-  
+
       peers[roomId].producers = peers[roomId].producers || [];
       peers[roomId].producers.push(producer);
-  
+
       callback({ id: producer.id });
-      
+
       // Notify other participants in the room about the new producer
       socket.broadcast.to(roomId).emit("newProducer", {
         producerId: producer.id,
-        userId: socket.id, // Include user ID
+        userId: socket.id,
       });
-  
+
       // console.log("Created new producer with ID:", producer.id);  // Log producer creation
     } catch (error) {
       console.error("Error producing media:", error);
       callback({ error: "Production failed" });
     }
   });
+
+  // socket.on("getProducers", (callback) => {
+  //   try {
+  //     const roomId = users[socket.id]?.roomId;
   
+  //     if (!roomId || !peers[roomId]) {
+  //       return callback({ error: "Room not found or no producers available" });
+  //     }
   
+  //     // Retrieve producers from the peers object for the specific room
+  //     const producers = peers[roomId].producers || [];
+  
+  //     // Map producer details if needed (e.g., IDs only)
+  //     const producerList = producers.map((producer) => ({
+  //       id: producer.id,
+  //       kind: producer.kind,
+  //     }));
+  
+  //     callback({ producers: producerList });
+  //   } catch (error) {
+  //     console.error("Error fetching producers:", error);
+  //     callback({ error: "Failed to fetch producers" });
+  //   }
+  // });
+  
+
+  socket.on("consume", async ({ producerId, rtpCapabilities }, callback) => {
+    try {
+      console.log("Consume request received:", producerId);
+      const consumer = await socket.transport.consume({
+        producerId,
+        rtpCapabilities,
+        paused: false,
+      });
+
+      callback({
+        id: consumer.id,
+        kind: consumer.kind,
+        rtpParameters: consumer.rtpParameters,
+      });
+
+      // Store consumer for cleanup purposes (if necessary)
+      peers[users[socket.id].roomId].consumers =
+        peers[users[socket.id].roomId].consumers || [];
+      peers[users[socket.id].roomId].consumers.push(consumer);
+    } catch (error) {
+      console.error("Error consuming mediaggggggggggg:", error);
+      callback({ error: "Consume failed" });
+    }
+  });
+ 
   socket.on("disconnect", () => {
-    console.log(`Client disconnected: ${socket.id}`);
+    // console.log(`Client disconnected: ${socket.id}`);
 
     const roomId = users[socket.id]?.roomId;
     if (roomId && peers[roomId]) {
