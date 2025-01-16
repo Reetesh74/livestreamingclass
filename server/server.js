@@ -115,7 +115,6 @@ io.on("connection", (socket) => {
         iceCandidates: transport.iceCandidates,
         dtlsParameters: transport.dtlsParameters,
       });
-
     } catch (error) {
       console.error("Error creating transport:", error);
       callback({ error: "Transport creation failed" });
@@ -154,7 +153,8 @@ io.on("connection", (socket) => {
       peers[roomId].producers.push(producer);
 
       callback({ id: producer.id });
-
+      console.log("producer.id", producer.id);
+      console.log("socket.id", socket.id);
       // Notify other participants in the room about the new producer
       socket.broadcast.to(roomId).emit("newProducer", {
         producerId: producer.id,
@@ -168,40 +168,44 @@ io.on("connection", (socket) => {
     }
   });
 
-  // socket.on("getProducers", (callback) => {
-  //   try {
-  //     const roomId = users[socket.id]?.roomId;
-  
-  //     if (!roomId || !peers[roomId]) {
-  //       return callback({ error: "Room not found or no producers available" });
-  //     }
-  
-  //     // Retrieve producers from the peers object for the specific room
-  //     const producers = peers[roomId].producers || [];
-  
-  //     // Map producer details if needed (e.g., IDs only)
-  //     const producerList = producers.map((producer) => ({
-  //       id: producer.id,
-  //       kind: producer.kind,
-  //     }));
-  
-  //     callback({ producers: producerList });
-  //   } catch (error) {
-  //     console.error("Error fetching producers:", error);
-  //     callback({ error: "Failed to fetch producers" });
-  //   }
-  // });
-  
+  socket.on("getProducers", (callback) => {
+    try {
+      const roomId = users[socket.id]?.roomId;
+
+      if (!roomId || !peers[roomId]) {
+        return callback({ error: "Room not found or no producers available" });
+      }
+
+      // Retrieve producers from the peers object for the specific room
+      const producers = peers[roomId].producers || [];
+
+      // Map producer details if needed (e.g., IDs only)
+      const producerList = producers.map((producer) => ({
+        id: producer.id,
+        kind: producer.kind,
+      }));
+
+      callback({ producers: producerList });
+    } catch (error) {
+      console.error("Error fetching producers:", error);
+      callback({ error: "Failed to fetch producers" });
+    }
+  });
 
   socket.on("consume", async ({ producerId, rtpCapabilities }, callback) => {
     try {
       console.log("Consume request received:", producerId);
+      // const consumer = await socket.transport.consume({
+      //   producerId,
+      //   rtpCapabilities,
+      //   paused: false,
+      // });
       const consumer = await socket.transport.consume({
         producerId,
         rtpCapabilities,
-        paused: false,
+        paused: true,
       });
-
+      console.log("consumer", consumer);
       callback({
         id: consumer.id,
         kind: consumer.kind,
@@ -217,7 +221,7 @@ io.on("connection", (socket) => {
       callback({ error: "Consume failed" });
     }
   });
- 
+
   socket.on("disconnect", () => {
     // console.log(`Client disconnected: ${socket.id}`);
 

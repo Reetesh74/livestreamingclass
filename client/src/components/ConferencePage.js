@@ -10,8 +10,10 @@ const ConferencePage = ({ roomId }) => {
   const [routerRtpCapabilities, setRouterRtpCapabilities] = useState(null);
   const [sendTransport, setSendTransport] = useState(null);
   const [userList, setUserList] = useState([]);
+  const [recvTransport, setRecvTransport] = useState(null);
+  const [currentProducerId, setCurrentProducerId] = useState(null);
   // const [recvTransport, setRecvTransport] = useState(null);
-  let recvTransport = null;
+  // let recvTransport = null;
   useEffect(() => {
     const newSocket = io(SERVER_URL);
     setSocket(newSocket);
@@ -38,7 +40,9 @@ const ConferencePage = ({ roomId }) => {
     });
     debugger;
     newSocket.on("newProducer", async ({ producerId, userId }) => {
+      debugger
       console.log(`New producer detected: ${producerId} from user ${userId}`);
+      setCurrentProducerId(producerId);
       await createRecvTransport();
       await consumeMedia(producerId);
     });
@@ -158,39 +162,51 @@ const ConferencePage = ({ roomId }) => {
   };
 
   const createRecvTransport = async () => {
-    debugger;
     if (!device) {
-      debugger
-      console.log("device is not initialized");
+      console.error("Device is not initialized");
       return;
     }
 
-    const transportOptions = await new Promise((resolve) =>
-      socket.emit("createTransport", resolve)
-    );
+    if (!socket) {
+      console.error("Socket is not initialized");
+      return;
+    }
 
-    recvTransport = device.createRecvTransport(transportOptions);
+    try {
+      const transportOptions = await new Promise((resolve) =>
+        socket.emit("createTransport", resolve)
+      );
 
-    recvTransport.on("connect", ({ dtlsParameters }, callback, errback) => {
-      console.log("Connecting recvTransport...");
-      socket.emit("connectTransport", { dtlsParameters }, (err) => {
-        if (err) {
-          errback(err);
-        } else {
-          debugger;
-          callback();
-        }
+      const transport = device.createRecvTransport(transportOptions);
+
+      transport.on("connect", ({ dtlsParameters }, callback, errback) => {
+        console.log("Connecting recvTransport...");
+        socket.emit("connectTransport", { dtlsParameters }, (err) => {
+          if (err) {
+            errback(err);
+          } else {
+            callback();
+          }
+        });
       });
-    });
 
-    console.log("Receive transport created:", recvTransport);
+      setRecvTransport(transport); // Save the transport in state
+      console.log("Receive transport created:", transport);
+    } catch (error) {
+      console.error("Error creating recvTransport:", error);
+    }
   };
 
   const consumeMedia = async (producerId) => {
+    if (!recvTransport) {
+      console.error("Receive transport is not initialized");
+      return;
+    }
+
     try {
-      debugger;
-      // Request the server to create a consumer
-      console.log("Receive transport createdfffffffffffffff :", recvTransport);
+      // Prevent multiple calls with the same producerId
+      console.log("Consuming media for producerId:", producerId);
+      debugger
       const { id, kind, rtpParameters, error } = await new Promise((resolve) =>
         socket.emit(
           "consume",
@@ -200,69 +216,20 @@ const ConferencePage = ({ roomId }) => {
       );
 
       if (error) {
-        console.error("Error consuming mediahhh  :", error);
+        console.error("Error consuming media:", error);
         return;
       }
 
-      // Create the consumer on the client
       const consumer = await recvTransport.consume({
         id,
         producerId,
         kind,
         rtpParameters,
       });
-      console.log("Consumer:", consumer);
-      console.log("Consumer Track:", consumer.track);
 
-      // Get the track and attach it to a media element
-      console.log(`Consumer created on client: ${consumer.id}`);
-
-      const stream = new MediaStream();
-      console.log("MediaStream:", stream);
-      console.log("Video Tracks:", stream.getVideoTracks());
-      console.log("Audio Tracks:", stream.getAudioTracks());
-
-      stream.addTrack(consumer.track);
-      console.log("MediaStream:", stream);
-      console.log("Tracks:", stream.getTracks());
-      console.log("Video Tracks:", stream.getVideoTracks());
-
-      if (kind === "video") {
-        const videoElement = document.createElement("video");
-        videoElement.srcObject = stream;
-        videoElement.autoplay = true;
-        videoElement.playsInline = true;
-        videoElement.style.width = "640px"; // Set desired width
-        videoElement.style.height = "360px"; // Set desired height
-
-        // Optional: Add additional styles for positioning or layout
-        videoElement.style.border = "1px solid #ccc";
-        videoElement.style.margin = "10px";
-
-        console.log("Adding Video Element to DOM:", videoElement);
-        console.log("Video element added:", videoElement);
-        console.log("Video Stream:", videoElement.srcObject);
-
-        videoElement
-          .play()
-          .then(() => console.log("Video playback started"))
-          .catch((err) => console.error("Autoplay Error:", err));
-
-        document.body.appendChild(videoElement);
-        // Verify after appending
-        console.log(
-          "Video Element in DOM after append:",
-          document.querySelector("video")
-        );
-      } else if (kind === "audio") {
-        const audioElement = document.createElement("audio");
-        audioElement.srcObject = stream;
-        audioElement.autoplay = true;
-        document.body.appendChild(audioElement);
-      }
-
-      // Resume the consumer after creating it
+      // Resume consumer
       await consumer.resume();
+      console.log("Media consumption successful for producer:", consumer.id);
     } catch (error) {
       console.error("Error consuming media:", error);
     }
@@ -280,12 +247,20 @@ const ConferencePage = ({ roomId }) => {
       <button onClick={produceMedia} disabled={!sendTransport}>
         Start Producing Media
       </button>
-      {/* <button onClick={createRecvTransport} disabled={!device}>
+      <button onClick={createRecvTransport} disabled={!device}>
         receive Send Transport
-      </button> */}
-      {/* <button onClick={consumeMedia} disabled={!createRecvTransport}>
-        Start reciving Media
-      </button> */}
+      </button>
+      <button
+        onClick={() => {
+          if (currentProducerId) {
+            consumeMedia(currentProducerId);
+          } else {
+            console.warn("No producerId available to consume");
+          }
+        }}
+      >
+        Start Receiving Media
+      </button>
       <div style={{ padding: "20px" }}>
         <h1>Room: {roomId}</h1>
         <h3>Participants:</h3>
